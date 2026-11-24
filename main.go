@@ -18,10 +18,16 @@ var webFiles embed.FS
 
 func main() {
 	mode := "all"
-	if len(os.Args) == 2 && (os.Args[1] == "server" || os.Args[1] == "worker") {
+	if len(os.Args) == 2 {
 		mode = os.Args[1]
-	} else if len(os.Args) != 1 {
-		log.Fatal("usage: mirea-kursovaya [server|worker]")
+	}
+	switch mode {
+	case "all", "server", "worker", "backup", "restore":
+	default:
+		log.Fatal("usage: mirea-kursovaya [server|worker|backup|restore]")
+	}
+	if len(os.Args) > 2 {
+		log.Fatal("usage: mirea-kursovaya [server|worker|backup|restore]")
 	}
 	if err := run(mode); err != nil {
 		log.Fatal(err)
@@ -38,6 +44,15 @@ func run(mode string) error {
 	if dbPath == "" {
 		dbPath = "data/analytics.db"
 	}
+	if mode == "backup" || mode == "restore" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if mode == "backup" {
+			return backupDatabase(ctx, dbPath, os.Stdout)
+		}
+		return restoreDatabase(ctx, dbPath, os.Stdin)
+	}
+
 	startupCtx, cancelStartup := context.WithTimeout(context.Background(), databaseTimeout)
 	store, err := openEventStore(startupCtx, dbPath)
 	cancelStartup()

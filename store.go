@@ -55,15 +55,7 @@ func openEventStore(ctx context.Context, filename string) (*eventStore, error) {
 
 	// A file URI escapes special characters in DB_PATH. The driver applies
 	// busy_timeout to each connection it opens.
-	dsn := url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(path),
-		RawQuery: url.Values{
-			"_pragma": {"busy_timeout(3000)"},
-			"_txlock": {"immediate"},
-		}.Encode(),
-	}
-	db, err := sql.Open("sqlite", dsn.String())
+	db, err := sql.Open("sqlite", sqliteDSN(path, url.Values{"_txlock": {"immediate"}}))
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +66,12 @@ func openEventStore(ctx context.Context, filename string) (*eventStore, error) {
 		return nil, fmt.Errorf("initialize event schema: %w", err)
 	}
 	return &eventStore{db: db}, nil
+}
+
+func sqliteDSN(path string, options url.Values) string {
+	options.Set("_pragma", "busy_timeout(3000)")
+	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: options.Encode()}
+	return dsn.String()
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {
