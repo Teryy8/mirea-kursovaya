@@ -1,21 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net/http"
-	"sort"
 	"strings"
-	"sync"
+	"time"
 	"unicode"
 )
 
+const databaseTimeout = 5 * time.Second
+
 type analytics struct {
-	mu    sync.Mutex
-	total uint64
-	views map[string]uint64
+	store *eventStore
 }
 
 type event struct {
@@ -33,7 +34,13 @@ type stats struct {
 	Pages      []pageViews `json:"pages"`
 }
 
-func (a *analytics) health(w http.ResponseWriter, _ *http.Request) {
+func (a *analytics) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), databaseTimeout)
+	defer cancel()
+	if err := a.store.db.PingContext(ctx); err != nil {
+		databaseError(w, "check database connection", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -67,29 +74,29 @@ func (a *analytics) addEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.mu.Lock()
-	a.total++
-	a.views[e.Path]++
-	a.mu.Unlock()
+	ctx, cancel := context.WithTimeout(r.Context(), databaseTimeout)
+	defer cancel()
+	if err := a.store.insertEvent(ctx, e); err != nil {
+		databaseError(w, "save event", err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, e)
 }
 
-func (a *analytics) stats(w http.ResponseWriter, _ *http.Request) {
-	a.mu.Lock()
-	snapshot := stats{TotalViews: a.total, Pages: make([]pageViews, 0, len(a.views))}
-	for path, views := range a.views {
-		snapshot.Pages = append(snapshot.Pages, pageViews{Path: path, Views: views})
+func (a *analytics) stats(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), databaseTimeout)
+	defer cancel()
+	snapshot, err := a.store.pageStats(ctx)
+	if err != nil {
+		databaseError(w, "read page statistics", err)
+		return
 	}
-	a.mu.Unlock()
-
-	sort.Slice(snapshot.Pages, func(i, j int) bool {
-		left, right := snapshot.Pages[i], snapshot.Pages[j]
-		if left.Views == right.Views {
-			return left.Path < right.Path
-		}
-		return left.Views > right.Views
-	})
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func databaseError(w http.ResponseWriter, operation string, err error) {
+	log.Printf("%s: %v", operation, err)
+	writeError(w, http.StatusServiceUnavailable, "database unavailable")
 }
 
 func writeDecodeError(w http.ResponseWriter, err error) {
