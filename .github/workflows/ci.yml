@@ -1,0 +1,98 @@
+name: CI and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: livetraffic-ci
+      LIVETRAFFIC_PORT: 18081
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Check formatting and test Go
+        run: |
+          unformatted=$(gofmt -l ./*.go)
+          if [ -n "$unformatted" ]; then
+            printf 'Run gofmt on:\n%s\n' "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          go test -race ./...
+      - name: Start Compose and test through Nginx
+        run: |
+          docker compose config -q
+          docker compose up --build -d --wait --wait-timeout 90
+          sh scripts/smoke.sh "http://127.0.0.1:$LIVETRAFFIC_PORT"
+      - name: Show failed service logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Remove temporary Compose stack
+        if: always()
+        run: docker compose down --volumes
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build and publish versioned images
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --driver docker-container --use
+          image_prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          app="$image_prefix/app:$GITHUB_REF_NAME"
+          proxy="$image_prefix/nginx:$GITHUB_REF_NAME"
+          mkdir -p dist
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --metadata-file dist/app-build.json --tag "$app" .
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --metadata-file dist/nginx-build.json --tag "$proxy" nginx
+          app_digest=$(jq -er '."containerimage.digest"' dist/app-build.json)
+          proxy_digest=$(jq -er '."containerimage.digest"' dist/nginx-build.json)
+          printf 'Commit: %s\nGo: %s@%s\nNginx: %s@%s\n' \
+            "$GITHUB_SHA" "$app" "$app_digest" "$proxy" "$proxy_digest" > dist/images.txt
+          for arch in amd64 arm64; do
+            docker pull --platform "linux/$arch" "$app"
+            docker pull --platform "linux/$arch" "$proxy"
+            docker image save --platform "linux/$arch" "$app" "$proxy" | gzip > "dist/livetraffic-linux-$arch.tar.gz"
+          done
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "LiveTraffic $GITHUB_REF_NAME" \
+            --notes 'Учебная система веб-аналитики на Go, SQLite и Nginx. В релизе есть образы для Linux amd64 и arm64, конфигурация Swarm и дайджесты образов GHCR.' \
+            dist/images.txt dist/livetraffic-linux-amd64.tar.gz dist/livetraffic-linux-arm64.tar.gz deploy/stack.yml
