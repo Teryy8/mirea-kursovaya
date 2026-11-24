@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 )
 
 const databaseTimeout = 5 * time.Second
@@ -20,6 +22,7 @@ type analytics struct {
 }
 
 type event struct {
+	ID   string `json:"event_id,omitempty"`
 	Type string `json:"type"`
 	Path string `json:"path"`
 }
@@ -67,6 +70,14 @@ func (a *analytics) addEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "type must be page_view")
 		return
 	}
+	if e.ID != "" {
+		id, err := uuid.Parse(e.ID)
+		if err != nil || len(e.ID) != 36 {
+			writeError(w, http.StatusBadRequest, "event_id must be a UUID")
+			return
+		}
+		e.ID = id.String()
+	}
 	if !strings.HasPrefix(e.Path, "/") || strings.HasPrefix(e.Path, "//") ||
 		len(e.Path) > 256 || strings.ContainsAny(e.Path, "?#\\") ||
 		strings.ContainsFunc(e.Path, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
@@ -76,11 +87,17 @@ func (a *analytics) addEvent(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), databaseTimeout)
 	defer cancel()
-	if err := a.store.insertEvent(ctx, e); err != nil {
-		databaseError(w, "save event", err)
-		return
+	result, err := a.store.enqueue(ctx, e)
+	switch {
+	case err != nil:
+		databaseError(w, "queue event", err)
+	case result == eventConflict:
+		writeError(w, http.StatusConflict, "event_id already belongs to a different event")
+	case result == eventDuplicate:
+		writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
+	default:
+		writeJSON(w, http.StatusAccepted, e)
 	}
-	writeJSON(w, http.StatusCreated, e)
 }
 
 func (a *analytics) stats(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +122,7 @@ func writeDecodeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 4096 bytes")
 		return
 	}
-	writeError(w, http.StatusBadRequest, "expected one JSON object with type and path")
+	writeError(w, http.StatusBadRequest, "expected one JSON object with type, path and optional event_id")
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

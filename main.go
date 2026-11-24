@@ -17,12 +17,18 @@ import (
 var webFiles embed.FS
 
 func main() {
-	if err := run(); err != nil {
+	mode := "all"
+	if len(os.Args) == 2 && (os.Args[1] == "server" || os.Args[1] == "worker") {
+		mode = os.Args[1]
+	} else if len(os.Args) != 1 {
+		log.Fatal("usage: mirea-kursovaya [server|worker]")
+	}
+	if err := run(mode); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run() error {
+func run(mode string) error {
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8080"
@@ -40,6 +46,27 @@ func run() error {
 	}
 	defer store.db.Close()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if mode == "worker" {
+		log.Printf("LiveTraffic worker: %s", dbPath)
+		store.runWorker(ctx)
+		return nil
+	}
+	if mode == "all" {
+		workerCtx, cancel := context.WithCancel(ctx)
+		workerDone := make(chan struct{})
+		go func() {
+			defer close(workerDone)
+			store.runWorker(workerCtx)
+		}()
+		defer func() {
+			cancel()
+			<-workerDone
+		}()
+	}
+
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           newMux(store),
@@ -48,9 +75,6 @@ func run() error {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	serverDone := make(chan error, 1)
 	go func() {
 		log.Printf("LiveTraffic: http://%s", addr)
