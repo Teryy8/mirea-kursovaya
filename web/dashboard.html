@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiveTraffic — аналитика</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>LiveTraffic</h1>
+      <a href="/demo/" target="_blank" rel="noopener">Открыть демосайт ↗</a>
+    </header>
+    <section class="metric" aria-labelledby="metric-title">
+      <h2 id="metric-title">Просмотры страниц</h2>
+      <p class="number" id="total">—</p>
+      <p class="muted" id="status" role="status">Подключение к серверу…</p>
+    </section>
+    <section class="card" aria-labelledby="pages-title">
+      <h2 id="pages-title">Популярные страницы</h2>
+      <p class="muted" id="empty">Откройте демосайт, чтобы появился первый просмотр.</p>
+      <table id="pages" hidden>
+        <thead><tr><th scope="col">Страница</th><th scope="col">Просмотры</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
