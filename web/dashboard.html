@@ -13,19 +13,68 @@
       <h1>LiveTraffic</h1>
       <a href="/demo/" target="_blank" rel="noopener">Открыть демосайт ↗</a>
     </header>
-    <section class="metric" aria-labelledby="metric-title">
-      <h2 id="metric-title">Просмотры страниц</h2>
-      <p class="number" id="total">—</p>
-      <p class="muted" id="status" role="status">Подключение к серверу…</p>
+    <div class="metrics">
+      <section class="metric" aria-labelledby="metric-title">
+        <h2 id="metric-title">Просмотры за всё время</h2>
+        <p class="number" id="total">—</p>
+      </section>
+      <section class="metric" aria-labelledby="sessions-title">
+        <h2 id="sessions-title">Активные сессии</h2>
+        <p class="number" id="sessions">—</p>
+        <p class="muted">Активность за последние 5 минут</p>
+      </section>
+    </div>
+    <p class="muted connection" id="status" role="status">Подключение к серверу…</p>
+    <section class="card" aria-labelledby="chart-title">
+      <div class="section-header">
+        <h2 id="chart-title">Просмотры по минутам</h2>
+        <label for="period">Период
+          <select id="period">
+            <option value="15">15 минут</option>
+            <option value="60">1 час</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted chart-status" id="chart-status">Загрузка графика…</p>
+      <div class="chart" id="chart" aria-hidden="true" hidden>
+        <div class="chart-y" id="chart-y"></div>
+        <div class="chart-plot" id="chart-bars"></div>
+        <div class="chart-x" id="chart-x"></div>
+      </div>
+      <details id="chart-details" hidden>
+        <summary>Данные графика</summary>
+        <table aria-label="Просмотры по минутам">
+          <thead><tr><th scope="col">Время</th><th scope="col">Просмотры</th></tr></thead>
+          <tbody id="minute-rows"></tbody>
+        </table>
+      </details>
     </section>
     <section class="card" aria-labelledby="pages-title">
-      <h2 id="pages-title">Популярные страницы</h2>
+      <h2 id="pages-title">Популярные страницы за всё время</h2>
       <p class="muted" id="empty">Откройте демосайт, чтобы появился первый просмотр.</p>
       <table id="pages" hidden>
         <thead><tr><th scope="col">Страница</th><th scope="col">Просмотры</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
+    <div class="analytics-tables">
+      <section class="card" aria-labelledby="sources-title">
+        <h2 id="sources-title">Источники переходов</h2>
+        <p class="muted" id="sources-empty">За выбранный период просмотров нет.</p>
+        <table id="sources" hidden>
+          <thead><tr><th scope="col">Источник</th><th scope="col">Просмотры</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+      <section class="card" aria-labelledby="recent-title">
+        <h2 id="recent-title">Последние события</h2>
+        <p class="muted" id="recent-empty">За выбранный период событий нет.</p>
+        <table id="recent" hidden>
+          <thead><tr><th scope="col">Страница</th><th scope="col">Событие</th><th scope="col">Время</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
   </main>
 </body>
 </html>

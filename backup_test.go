@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestBackupRestoresCountsAndPendingEvents(t *testing.T) {
@@ -19,7 +20,7 @@ func TestBackupRestoresCountsAndPendingEvents(t *testing.T) {
 	}
 	defer store.db.Close()
 
-	processed := event{ID: "1", Type: "page_view", Path: "/demo/"}
+	processed := event{ID: "1", Type: "page_view", Path: "/demo/", SessionID: "first-tab", Referrer: "example.com"}
 	pending := event{ID: "2", Type: "page_view", Path: "/demo/catalog"}
 	if _, err := store.enqueue(ctx, processed); err != nil {
 		t.Fatal(err)
@@ -52,6 +53,11 @@ func TestBackupRestoresCountsAndPendingEvents(t *testing.T) {
 	defer restored.db.Close()
 
 	assertStats(t, newMux(restored), stats{TotalViews: 1, Pages: []pageViews{{Path: "/demo/", Views: 1}}})
+	snapshotStats, err := restored.readTimeline(ctx, time.Now(), 15)
+	if err != nil || snapshotStats.ActiveSessions != 1 ||
+		len(snapshotStats.Sources) != 1 || snapshotStats.Sources[0].Domain != "example.com" {
+		t.Fatalf("restored source and session: %+v, error %v", snapshotStats, err)
+	}
 	if result, err := restored.enqueue(ctx, processed); result != eventDuplicate || err != nil {
 		t.Fatalf("deduplicate restored event: result %v, err %v", result, err)
 	}

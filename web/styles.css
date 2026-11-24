@@ -6,7 +6,7 @@
 }
 
 body { margin: 0; }
-main { max-width: 680px; margin: 0 auto; padding: 32px 20px; }
+main { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; margin-bottom: 24px; }
 h1, h2, p { margin: 0; }
 h1 { font-size: 2rem; }
@@ -22,3 +22,30 @@ td:first-child { overflow-wrap: anywhere; padding-right: 1rem; }
 td:last-child, th:last-child { text-align: right; }
 nav { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 24px; }
 nav a[aria-current="page"] { font-weight: 700; }
+.metrics, .analytics-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.connection { margin: 0 0 16px; }
+.section-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.section-header h2 { margin: 0; }
+.section-header label { color: #485e60; }
+select { margin-left: 6px; padding: 7px 10px; border: 1px solid #b4cac4; border-radius: 6px; background: white; font: inherit; color: #172b2d; }
+.chart-status { margin: 10px 0 16px; font-size: .9rem; }
+.chart { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 156px auto; gap: 8px 10px; }
+[hidden] { display: none !important; }
+.chart-y { display: flex; flex-direction: column; justify-content: space-between; font-variant-numeric: tabular-nums; text-align: right; }
+.chart-y, .chart-x { font-size: .8rem; color: #485e60; }
+.chart-x { grid-column: 2; display: flex; justify-content: space-between; }
+.chart-plot {
+  display: grid;
+  grid-template-columns: repeat(var(--points), minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: clamp(1px, .45vw, 5px);
+  align-items: end;
+  background: repeating-linear-gradient(to top, #d2dfdc 0 1px, transparent 1px 33.333%);
+  border-top: 1px solid #d2dfdc;
+}
+.chart-bar { min-width: 0; background: #087e71; border-radius: 3px 3px 0 0; }
+summary { width: fit-content; margin-top: 14px; cursor: pointer; color: #00675c; }
+td, th { overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .metrics, .analytics-tables { grid-template-columns: 1fr; gap: 0; }
+}

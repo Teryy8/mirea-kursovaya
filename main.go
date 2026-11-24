@@ -69,6 +69,10 @@ func run(mode string) error {
 		store.runWorker(ctx)
 		return nil
 	}
+	access, err := loadDashboardAccess()
+	if err != nil {
+		return fmt.Errorf("configure dashboard access: %w", err)
+	}
 	if mode == "all" {
 		workerCtx, cancel := context.WithCancel(ctx)
 		workerDone := make(chan struct{})
@@ -84,7 +88,7 @@ func run(mode string) error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newMux(store),
+		Handler:           newMuxWithAccess(store, access),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -112,12 +116,17 @@ func run(mode string) error {
 }
 
 func newMux(store *eventStore) *http.ServeMux {
+	return newMuxWithAccess(store, nil)
+}
+
+func newMuxWithAccess(store *eventStore, access *dashboardAccess) *http.ServeMux {
 	api := analytics{store: store}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", api.health)
 	mux.HandleFunc("POST /api/events", api.addEvent)
-	mux.HandleFunc("GET /api/stats", api.stats)
-	mux.HandleFunc("GET /{$}", webFile("dashboard.html"))
+	mux.HandleFunc("GET /api/stats", access.protect(api.stats))
+	mux.HandleFunc("GET /api/timeseries", access.protect(api.timeline))
+	mux.HandleFunc("GET /{$}", access.protect(webFile("dashboard.html")))
 	mux.HandleFunc("GET /demo/{$}", webFile("demo.html"))
 	mux.HandleFunc("GET /demo/catalog", webFile("demo.html"))
 	mux.HandleFunc("GET /demo/about", webFile("demo.html"))

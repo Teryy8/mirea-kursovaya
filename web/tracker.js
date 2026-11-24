@@ -17,8 +17,35 @@ function newEventId() {
   return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
 }
 
+let sessionId = newEventId();
+try {
+  sessionId = sessionStorage.getItem("livetraffic-session") || sessionId;
+  sessionStorage.setItem("livetraffic-session", sessionId);
+} catch {
+  // The current tab can still report events if the browser blocks storage.
+}
+
+function sourceDomain() {
+  if (!document.referrer) return "";
+  const source = new URL(document.referrer);
+  const host = source.hostname.replace(/\.$/, "");
+  const local = host === window.location.hostname;
+  const domain = host.includes(".") && /^[a-z]/i.test(host.split(".").at(-1));
+  return !local && domain ? host : "";
+}
+
+function eventBody(type) {
+  return JSON.stringify({
+    event_id: newEventId(),
+    type,
+    path: pagePath,
+    session_id: sessionId,
+    referrer: type === "page_view" ? sourceDomain() : "",
+  });
+}
+
 async function sendView() {
-  const body = JSON.stringify({event_id: newEventId(), type: "page_view", path: pagePath});
+  const body = eventBody("page_view");
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch("/api/events", {
@@ -41,4 +68,23 @@ async function sendView() {
   eventStatus.textContent = "Не удалось отправить просмотр";
 }
 
+function sendActivity(type) {
+  fetch("/api/events", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: eventBody(type),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+document.querySelector("nav").addEventListener("click", e => {
+  if (e.target.closest("a")) sendActivity("click");
+});
+
+function heartbeat() {
+  if (document.visibilityState === "visible") sendActivity("heartbeat");
+}
+
 sendView();
+window.setInterval(heartbeat, 30000);
+document.addEventListener("visibilitychange", heartbeat);

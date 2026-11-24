@@ -8,6 +8,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -22,10 +23,14 @@ type analytics struct {
 }
 
 type event struct {
-	ID   string `json:"event_id,omitempty"`
-	Type string `json:"type"`
-	Path string `json:"path"`
+	ID        string `json:"event_id,omitempty"`
+	Type      string `json:"type"`
+	Path      string `json:"path"`
+	SessionID string `json:"session_id,omitempty"`
+	Referrer  string `json:"referrer,omitempty"`
 }
+
+var referrerDomain = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
 type pageViews struct {
 	Path  string `json:"path"`
@@ -66,8 +71,10 @@ func (a *analytics) addEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if e.Type != "page_view" {
-		writeError(w, http.StatusBadRequest, "type must be page_view")
+	switch e.Type {
+	case "page_view", "click", "heartbeat":
+	default:
+		writeError(w, http.StatusBadRequest, "type must be page_view, click or heartbeat")
 		return
 	}
 	if e.ID != "" {
@@ -77,6 +84,24 @@ func (a *analytics) addEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		e.ID = id.String()
+	}
+	if e.SessionID != "" {
+		id, err := uuid.Parse(e.SessionID)
+		if err != nil || len(e.SessionID) != 36 {
+			writeError(w, http.StatusBadRequest, "session_id must be a UUID")
+			return
+		}
+		e.SessionID = id.String()
+	}
+	if e.Type == "heartbeat" && e.SessionID == "" {
+		writeError(w, http.StatusBadRequest, "heartbeat requires a session_id")
+		return
+	}
+	e.Referrer = strings.ToLower(strings.TrimSuffix(e.Referrer, "."))
+	if e.Referrer != "" && (e.Type != "page_view" || len(e.Referrer) > 253 ||
+		!referrerDomain.MatchString(e.Referrer) || e.Referrer[strings.LastIndexByte(e.Referrer, '.')+1] < 'a') {
+		writeError(w, http.StatusBadRequest, "referrer must be a domain for a page view")
+		return
 	}
 	if !strings.HasPrefix(e.Path, "/") || strings.HasPrefix(e.Path, "//") ||
 		len(e.Path) > 256 || strings.ContainsAny(e.Path, "?#\\") ||
@@ -122,7 +147,7 @@ func writeDecodeError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds 4096 bytes")
 		return
 	}
-	writeError(w, http.StatusBadRequest, "expected one JSON object with type, path and optional event_id")
+	writeError(w, http.StatusBadRequest, "expected one JSON event object")
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

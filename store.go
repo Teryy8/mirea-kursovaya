@@ -40,6 +40,16 @@ INSERT INTO page_view_counts (path, views)
 PRAGMA user_version = 1;
 `
 
+const analyticsSchema = `
+CREATE TABLE IF NOT EXISTS event_details (
+	event_row  INTEGER PRIMARY KEY REFERENCES events(id),
+	session_id TEXT NOT NULL,
+	referrer   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_processed_time ON events (received_at)
+	WHERE processed_at IS NOT NULL;
+`
+
 type eventStore struct {
 	db *sql.DB
 }
@@ -94,6 +104,10 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	default:
 		return fmt.Errorf("unsupported schema version %d", version)
 	}
+	// These additive objects keep the database readable by earlier releases.
+	if _, err := tx.ExecContext(ctx, analyticsSchema); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -106,26 +120,48 @@ const (
 )
 
 func (s *eventStore) enqueue(ctx context.Context, e event) (enqueueResult, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return eventQueued, err
+	}
+	defer tx.Rollback()
+
 	const insert = `
 		INSERT INTO events (event_type, path, received_at, event_id)
 		VALUES (?, ?, ?, NULLIF(?, ''))
 		ON CONFLICT(event_id) DO NOTHING`
-	result, err := s.db.ExecContext(ctx, insert, e.Type, e.Path, time.Now().UnixMilli(), e.ID)
+	result, err := tx.ExecContext(ctx, insert, e.Type, e.Path, time.Now().UnixMilli(), e.ID)
 	if err != nil {
 		return eventQueued, err
 	}
 	n, err := result.RowsAffected()
-	if err != nil || n == 1 {
-		return eventQueued, err
-	}
-
-	var savedType, savedPath string
-	err = s.db.QueryRowContext(ctx, "SELECT event_type, path FROM events WHERE event_id = ?", e.ID).
-		Scan(&savedType, &savedPath)
 	if err != nil {
 		return eventQueued, err
 	}
-	if savedType != e.Type || savedPath != e.Path {
+	if n == 1 {
+		if e.SessionID != "" || e.Referrer != "" {
+			row, err := result.LastInsertId()
+			if err != nil {
+				return eventQueued, err
+			}
+			const details = `INSERT INTO event_details (event_row, session_id, referrer) VALUES (?, ?, ?)`
+			if _, err := tx.ExecContext(ctx, details, row, e.SessionID, e.Referrer); err != nil {
+				return eventQueued, err
+			}
+		}
+		return eventQueued, tx.Commit()
+	}
+
+	const saved = `
+		SELECT e.event_type, e.path, COALESCE(d.session_id, ''), COALESCE(d.referrer, '')
+		FROM events e LEFT JOIN event_details d ON d.event_row = e.id WHERE e.event_id = ?`
+	var original event
+	original.ID = e.ID
+	err = tx.QueryRowContext(ctx, saved, e.ID).Scan(&original.Type, &original.Path, &original.SessionID, &original.Referrer)
+	if err != nil {
+		return eventQueued, err
+	}
+	if original != e {
 		return eventConflict, nil
 	}
 	return eventDuplicate, nil

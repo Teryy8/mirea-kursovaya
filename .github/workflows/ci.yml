@@ -95,4 +95,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --verify-tag \
             --title "LiveTraffic $GITHUB_REF_NAME" \
             --notes 'Учебная система веб-аналитики на Go, SQLite и Nginx. В релизе есть образы для Linux amd64 и arm64, конфигурация Swarm и дайджесты образов GHCR.' \
-            dist/images.txt dist/livetraffic-linux-amd64.tar.gz dist/livetraffic-linux-arm64.tar.gz deploy/stack.yml
+            dist/images.txt dist/livetraffic-linux-amd64.tar.gz dist/livetraffic-linux-arm64.tar.gz \
+            deploy/stack.yml deploy/stack-auth.yml scripts/deploy-swarm.sh

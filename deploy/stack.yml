@@ -9,6 +9,11 @@ services:
   api:
     image: "${LIVETRAFFIC_APP_IMAGE:?set the published or preloaded Go image}"
     command: ["server"]
+    logging: &logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - analytics-data:/data
     networks: [web]
@@ -31,6 +36,7 @@ services:
   worker:
     image: "${LIVETRAFFIC_APP_IMAGE:?set the published or preloaded Go image}"
     command: ["worker"]
+    logging: *logs
     volumes:
       - analytics-data:/data
     networks: [jobs]
@@ -47,6 +53,7 @@ services:
   nginx:
     image: "${LIVETRAFFIC_PROXY_IMAGE:?set the published or preloaded Nginx image}"
     networks: [web]
+    logging: *logs
     ports:
       - target: 80
         published: ${LIVETRAFFIC_SWARM_PORT:-8082}
