@@ -1,0 +1,76 @@
+version: "3.8"
+
+x-sqlite-placement: &sqlite-placement
+  # A local volume with the same name on another node is a different database.
+  constraints:
+    - "node.id == ${LIVETRAFFIC_DATA_NODE_ID:?set the Swarm data node ID}"
+
+services:
+  api:
+    image: "${LIVETRAFFIC_APP_IMAGE:?set the published or preloaded Go image}"
+    command: ["server"]
+    volumes:
+      - analytics-data:/data
+    networks: [web]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    deploy:
+      replicas: 1
+      placement: *sqlite-placement
+      restart_policy:
+        condition: any
+        delay: 2s
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  worker:
+    image: "${LIVETRAFFIC_APP_IMAGE:?set the published or preloaded Go image}"
+    command: ["worker"]
+    volumes:
+      - analytics-data:/data
+    networks: [jobs]
+    deploy:
+      replicas: 1
+      placement: *sqlite-placement
+      restart_policy:
+        condition: any
+        delay: 2s
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  nginx:
+    image: "${LIVETRAFFIC_PROXY_IMAGE:?set the published or preloaded Nginx image}"
+    networks: [web]
+    ports:
+      - target: 80
+        published: ${LIVETRAFFIC_SWARM_PORT:-8082}
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - "node.id != ${LIVETRAFFIC_DATA_NODE_ID:?set the Swarm data node ID}"
+      restart_policy:
+        condition: any
+        delay: 2s
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+networks:
+  web:
+    driver: overlay
+  jobs:
+    driver: overlay
+    internal: true
+
+volumes:
+  analytics-data:
+    driver: local
